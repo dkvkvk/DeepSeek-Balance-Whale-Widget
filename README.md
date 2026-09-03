@@ -195,6 +195,15 @@ Remove-Item "$web\DSniang02.png" -ErrorAction SilentlyContinue
 
 「每轮对话消耗统计」直接监听 DSH 本机会话事件，按模型真实 usage 换算金额（与今日已用同一套峰谷定价表），**不需要** `DEEPSEEK_PLATFORM_TOKEN`。
 
+### Token 计量口径（v0.2.11 修正）
+
+挂件的「当前对话消耗 / 今日已用」按 DSH 官方的 **TokenUsage 互斥分桶**口径累加：`input + cacheRead + cacheWrite + output`（`inputTokens` 不含缓存命中，推理 token 已包含在 `outputTokens` 中）。v0.2.11 修正了四个计量问题：
+
+- **补齐缓存分桶**：今日用量此前只加 `inputTokens + outputTokens`，漏掉 `cacheReadTokens` / `cacheWriteTokens`——而上下文缓存往往占大头（缓存命中可达输入的数倍），导致严重偏低；现在按全分桶累加
+- **本地日期键**：DSH 用量账本（`~/.dsh/dsh-usage/usage-ledger.json`）按**本地日期**归档，此前用 UTC 的 `toISOString()` 取日期键，东八区 0:00–8:00 会把「今天」读成「昨天」；现在改为本地日期键
+- **子代理归并**：子代理 / fork 会话（`header.parentSession` 存在）的消耗现在全部归并进其**根会话**——「当前对话」显示整棵会话树的累计，不再被并行子代理顶掉或漏计；每轮消耗泡泡同样把子代理 usage 计入当轮
+- **推理不重复计**：DSH 归一化的 `outputTokens` 已包含推理 token，此前把 `reasoningTokens` 又单独加了一遍（DeepSeek 官方通道会双倍计）；计价同步修正，缓存写入按未命中输入价计
+
 ## 验证
 
 ```powershell
@@ -207,7 +216,7 @@ curl http://127.0.0.1:3080/dsh-whale/last-turn.json
 ```
 
 - `/dsh-whale/image.png` → 200 `image/png`
-- `/dsh-whale/balance.json` → 200，含 `{"ok":true,"totalBalance":...,"currency":"CNY","todayUsage":...}`
+- `/dsh-whale/balance.json` → 200，含 `{"ok":true,"totalBalance":...,"currency":"tokens","todayUsage":...}`（当前对话 token 累计 + 今日 token）
 - `/dsh-whale/size.json` → GET 返回配置；PUT 写入
 - `/dsh-whale/last-turn.json` → 200，含最近一轮对话消耗 `{seq, turn, amount, tokens}`
 - 浏览器 F5 后右下角出现挂件
