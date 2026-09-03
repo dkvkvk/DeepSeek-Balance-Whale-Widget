@@ -195,14 +195,17 @@ Remove-Item "$web\DSniang02.png" -ErrorAction SilentlyContinue
 
 「每轮对话消耗统计」直接监听 DSH 本机会话事件，按模型真实 usage 换算金额（与今日已用同一套峰谷定价表），**不需要** `DEEPSEEK_PLATFORM_TOKEN`。
 
-### Token 计量口径（v0.2.11 修正）
+### Token 计量口径（v0.2.12 修正）
 
-挂件的「当前对话消耗 / 今日已用」按 DSH 官方的 **TokenUsage 互斥分桶**口径累加：`input + cacheRead + cacheWrite + output`（`inputTokens` 不含缓存命中，推理 token 已包含在 `outputTokens` 中）。v0.2.11 修正了四个计量问题：
+「当前对话消耗」直接查询 DSH 的 **tokenUsage 会话投影**（`sessionProjections` 服务）——从会话完整日志折叠出的累计用量，与 DSH 界面统计条同源同口径，**重启后依然完整**（含重启前的历史轮次），并自动累加当前对话派生的全部子代理会话。今日已用按 DSH 官方的 **TokenUsage 互斥分桶**口径累加：`input + cacheRead + cacheWrite + output`（`inputTokens` 不含缓存命中，推理 token 已包含在 `outputTokens` 中）。
+
+v0.2.11–0.2.12 修正了五个计量问题：
 
 - **补齐缓存分桶**：今日用量此前只加 `inputTokens + outputTokens`，漏掉 `cacheReadTokens` / `cacheWriteTokens`——而上下文缓存往往占大头（缓存命中可达输入的数倍），导致严重偏低；现在按全分桶累加
 - **本地日期键**：DSH 用量账本（`~/.dsh/dsh-usage/usage-ledger.json`）按**本地日期**归档，此前用 UTC 的 `toISOString()` 取日期键，东八区 0:00–8:00 会把「今天」读成「昨天」；现在改为本地日期键
 - **子代理归并**：子代理 / fork 会话（`header.parentSession` 存在）的消耗现在全部归并进其**根会话**——「当前对话」显示整棵会话树的累计，不再被并行子代理顶掉或漏计；每轮消耗泡泡同样把子代理 usage 计入当轮
 - **推理不重复计**：DSH 归一化的 `outputTokens` 已包含推理 token，此前把 `reasoningTokens` 又单独加了一遍（DeepSeek 官方通道会双倍计）；计价同步修正，缓存写入按未命中输入价计
+- **重启不清零**（v0.2.12）：「当前对话消耗」从内存事件累加改为查询 DSH 会话投影——重启 DSH 后数字不再从零开始，恢复的对话显示完整历史用量；进程刚启动还没有事件时，用磁盘上最近写入的会话文件定位当前对话
 
 ## 验证
 
